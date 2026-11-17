@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cámara">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<title>Cámara Limpia</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
+  video { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
+    object-fit: cover; background: #000; }
+  video.fit { object-fit: contain; }
+  video.mirror { transform: scaleX(-1); }
+  #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #888; font: 17px -apple-system, system-ui, sans-serif; text-align: center; padding: 24px; }
+  #msg.hidden { display: none; }
+</style>
+</head>
+<body>
+<video id="v" autoplay playsinline muted></video>
+<div id="msg">Toca la pantalla para encender la cámara</div>
+<script>
+  const v = document.getElementById('v');
+  const msg = document.getElementById('msg');
+  let facing = 'environment';   // trasera por defecto
+  let stream = null;
+  let started = false;
+
+  async function start() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      v.srcObject = stream;
+      v.classList.toggle('mirror', facing === 'user');
+      await v.play();
+      msg.classList.add('hidden');
+      started = true;
+      keepAwake();
+    } catch (e) {
+      msg.textContent = 'No se pudo abrir la cámara: ' + e.message;
+      msg.classList.remove('hidden');
+    }
+  }
+
+  // Mantener la pantalla encendida
+  let lock = null;
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator && !lock) {
+      lock = await navigator.wakeLock.request('screen');
+      lock.addEventListener('release', () => { lock = null; });
+    } } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && started) { keepAwake(); if (v.paused) v.play(); }
+  });
+
+  // Toque: encender. Doble toque: cambiar cámara. Mantener: llenar / completa.
+  let lastTap = 0, pressTimer = null, longPressed = false;
+  document.addEventListener('touchstart', e => {
+    e.preventDefault();
+    longPressed = false;
+    pressTimer = setTimeout(() => { longPressed = true; v.classList.toggle('fit'); }, 600);
+  }, { passive: false });
+  document.addEventListener('touchend', e => {
+    e.preventDefault();
+    clearTimeout(pressTimer);
+    if (longPressed) return;
+    if (!started) { start(); return; }
+    const now = Date.now();
+    if (now - lastTap < 350) {
+      facing = facing === 'environment' ? 'user' : 'environment';
+      start();
+      lastTap = 0;
+    } else lastTap = now;
+  }, { passive: false });
+  // Para probar en computadora
+  document.addEventListener('click', () => { if (!started) start(); });
+
+  // Si ya diste permiso antes, arranca sola
+  start();
+</script>
+</body>
+</html>
